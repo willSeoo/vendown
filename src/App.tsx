@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 
 type Mode = 'each' | 'bulk'
-type Item = { id: number; name: string; note: string; qty: number; cr: number; pr: number; cm: Mode; pm: Mode; mp?: number; mm?: Mode; mt?: number }
-type Sale = { id: number; itemId: number; name: string; qty: number; revenue: number; cost: number; ts: number; mk?: number }
-type Form = { name: string; cost: string; price: string; qty: string; note: string; cm: string; pm: string; market: string; mm: string }
+type Item = { id: number; name: string; note: string; qty: number; cr: number; pr: number; cm: Mode; pm: Mode; mp?: number; mm?: Mode; mt?: number; cat?: string }
+type Sale = { id: number; itemId: number; name: string; qty: number; revenue: number; cost: number; ts: number; mk?: number; cat?: string }
+type Form = { name: string; cost: string; price: string; qty: string; note: string; cm: string; pm: string; market: string; mm: string; cat: string }
 
 const KEY = 'vend-items-v1'
 const SKEY = 'vend-sales-v1'
-const empty: Form = { name: '', cost: '', price: '', qty: '1', note: '', cm: 'each', pm: 'each', market: '', mm: 'each' }
+const empty: Form = { name: '', cost: '', price: '', qty: '1', note: '', cm: 'each', pm: 'each', market: '', mm: 'each', cat: 'Item' }
 
 // bulk "200/1" means 200 items for 1 WL, so one item costs 1/200 WL
 const per = (raw: number, m: Mode) => (isNaN(raw) ? NaN : m === 'bulk' ? (raw > 0 ? 1 / raw : 0) : raw)
@@ -21,6 +21,8 @@ const wl = (v: number) => {
 const shown = (raw: number, m: Mode) => (m === 'bulk' ? `${raw} / 1 WL` : wl(raw))
 const profitEach = (i: Item) => per(i.pr, i.pm) - per(i.cr, i.cm)
 
+const CATS = ['Block', 'Background', 'Consumable', 'Surgery', 'Clothing', 'Seed', 'Item', 'Other']
+const catOf = (x: { cat?: string }) => x.cat ?? 'Other'
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const stamp = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
 const dstr = (t: number) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
@@ -59,15 +61,22 @@ const makePdf = async (name: string, title: string, lines: string[], tables: Pdf
   lines.forEach((l, i) => doc.text(l, 40, 64 + i * 14))
   let y = 64 + lines.length * 14 + 12
   for (const t of tables) {
-    if (y > doc.internal.pageSize.getHeight() - 90) { doc.addPage(); y = 40 }
-    if (t.title) { doc.setFontSize(12); doc.setTextColor(0); doc.text(t.title, 40, y + 10); y += 16 }
+    if (y > doc.internal.pageSize.getHeight() - 120) { doc.addPage(); y = 40 }
+    if (t.title) {
+      doc.setFillColor(43, 100, 196)
+      doc.rect(40, y, doc.internal.pageSize.getWidth() - 80, 20, 'F')
+      doc.setFontSize(11)
+      doc.setTextColor(255)
+      doc.text(t.title, 48, y + 14)
+      y += 20
+    }
     autoTable(doc, {
       startY: y,
       head: [t.head],
       body: t.body.map((r) => r.map(String)),
       foot: t.foot ? [t.foot.map(String)] : undefined,
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [43, 100, 196] },
+      headStyles: { fillColor: [225, 234, 244], textColor: 20 },
       footStyles: { fillColor: [230, 240, 247], textColor: 20 },
       margin: { left: 40, right: 40 },
     })
@@ -86,6 +95,7 @@ export default function App() {
   })
   const [tab, setTab] = useState<'items' | 'report'>('items')
   const [range, setRange] = useState('7')
+  const [catFilter, setCatFilter] = useState('all')
   const [form, setForm] = useState<Form>(empty)
   const [editId, setEditId] = useState<number | null>(null)
   const [q, setQ] = useState('')
@@ -115,13 +125,13 @@ export default function App() {
     const mm = form.mm as Mode
     const prev = items.find((i) => i.id === editId)
     const mt = mp === undefined ? undefined : !prev || prev.mp !== mp || prev.mm !== mm ? Date.now() : prev.mt
-    const d = { name: form.name.trim(), note: form.note.trim(), qty, cr, pr, cm: form.cm as Mode, pm: form.pm as Mode, mp, mm, mt }
+    const d = { name: form.name.trim(), note: form.note.trim(), qty, cr, pr, cm: form.cm as Mode, pm: form.pm as Mode, mp, mm, mt, cat: form.cat }
     setItems(editId === null ? [...items, { id: Date.now(), ...d }] : items.map((i) => (i.id === editId ? { ...i, ...d } : i)))
     reset()
   }
 
   const edit = (i: Item) => {
-    setForm({ name: i.name, cost: String(i.cr), price: String(i.pr), qty: String(i.qty), note: i.note, cm: i.cm, pm: i.pm, market: i.mp === undefined ? '' : String(i.mp), mm: i.mm ?? 'each' })
+    setForm({ name: i.name, cost: String(i.cr), price: String(i.pr), qty: String(i.qty), note: i.note, cm: i.cm, pm: i.pm, market: i.mp === undefined ? '' : String(i.mp), mm: i.mm ?? 'each', cat: catOf(i) })
     setEditId(i.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -129,7 +139,7 @@ export default function App() {
   const sell = (i: Item) => {
     const k = Math.min(i.qty, Math.max(1, parseInt(sold[i.id] || '1', 10) || 1))
     setItems(items.map((x) => (x.id === i.id ? { ...x, qty: x.qty - k } : x)))
-    setSales([{ id: Date.now(), itemId: i.id, name: i.name, qty: k, revenue: per(i.pr, i.pm) * k, cost: per(i.cr, i.cm) * k, ts: Date.now(), mk: i.mp === undefined ? undefined : per(i.mp, i.mm ?? 'each') }, ...sales])
+    setSales([{ id: Date.now(), itemId: i.id, name: i.name, qty: k, revenue: per(i.pr, i.pm) * k, cost: per(i.cr, i.cm) * k, ts: Date.now(), mk: i.mp === undefined ? undefined : per(i.mp, i.mm ?? 'each'), cat: catOf(i) }, ...sales])
   }
 
   // undo a recorded sale and put the stock back
@@ -150,13 +160,14 @@ export default function App() {
   }
 
   const list = useMemo(() => {
-    const v = items.filter((i) => !q.trim() || i.name.toLowerCase().includes(q.trim().toLowerCase()))
+    const v = items.filter((i) => (catFilter === 'all' || catOf(i) === catFilter) && (!q.trim() || i.name.toLowerCase().includes(q.trim().toLowerCase())))
     return v.sort((a, b) =>
-      sort === 'name' ? a.name.localeCompare(b.name)
+      sort === 'cat' ? CATS.indexOf(catOf(a)) - CATS.indexOf(catOf(b)) || a.name.localeCompare(b.name)
+      : sort === 'name' ? a.name.localeCompare(b.name)
       : sort === 'profit' ? profitEach(b) - profitEach(a)
       : sort === 'price' ? per(b.pr, b.pm) - per(a.pr, a.pm)
       : b.id - a.id)
-  }, [items, q, sort])
+  }, [items, q, sort, catFilter])
 
   const tot = items.reduce(
     (t, i) => ({ stock: t.stock + i.qty, cost: t.cost + per(i.cr, i.cm) * i.qty, profit: t.profit + profitEach(i) * i.qty }),
@@ -183,54 +194,99 @@ export default function App() {
 
   const exportItems = () =>
     download(`items-vend-${stamp()}.csv`, [
-      ['Item', 'Note', 'Stock', 'Modal (input)', 'Modal type', 'Modal per item (WL)', 'Sell (input)', 'Sell type', 'Sell per item (WL)', 'Profit per item (WL)', 'Margin %', 'Stock value at modal (WL)', 'Profit if all sold (WL)', 'Market price (input)', 'Market type', 'Market per item (WL)', 'Sell vs market %', 'Market price updated'],
+      ['Item', 'Note', 'Stock', 'Modal (input)', 'Modal type', 'Modal per item (WL)', 'Sell (input)', 'Sell type', 'Sell per item (WL)', 'Profit per item (WL)', 'Margin %', 'Stock value at modal (WL)', 'Profit if all sold (WL)', 'Market price (input)', 'Market type', 'Market per item (WL)', 'Sell vs market %', 'Market price updated', 'Category'],
       ...items.map((i) => {
         const c1 = per(i.cr, i.cm), p1 = per(i.pr, i.pm), mkv = i.mp === undefined ? undefined : per(i.mp, i.mm ?? 'each')
-        return [i.name, i.note, i.qty, i.cr, i.cm === 'bulk' ? 'items per 1 WL' : 'WL each', u4(c1), i.pr, i.pm === 'bulk' ? 'items per 1 WL' : 'WL each', u4(p1), u4(p1 - c1), c1 > 0 ? Math.round(((p1 - c1) / c1) * 100) : '', Math.round(c1 * i.qty), Math.round((p1 - c1) * i.qty), i.mp ?? '', i.mp === undefined ? '' : i.mm === 'bulk' ? 'items per 1 WL' : 'WL each', mkv === undefined ? '' : u4(mkv), mkv && mkv > 0 ? Math.round((p1 / mkv - 1) * 100) : '', i.mt ? dstr(i.mt) : '']
+        return [i.name, i.note, i.qty, i.cr, i.cm === 'bulk' ? 'items per 1 WL' : 'WL each', u4(c1), i.pr, i.pm === 'bulk' ? 'items per 1 WL' : 'WL each', u4(p1), u4(p1 - c1), c1 > 0 ? Math.round(((p1 - c1) / c1) * 100) : '', Math.round(c1 * i.qty), Math.round((p1 - c1) * i.qty), i.mp ?? '', i.mp === undefined ? '' : i.mm === 'bulk' ? 'items per 1 WL' : 'WL each', mkv === undefined ? '' : u4(mkv), mkv && mkv > 0 ? Math.round((p1 / mkv - 1) * 100) : '', i.mt ? dstr(i.mt) : '', catOf(i)]
       }),
-      ['TOTAL', '', tot.stock, '', '', '', '', '', '', '', '', Math.round(tot.cost), Math.round(tot.profit), '', '', '', '', ''],
+      ['TOTAL', '', tot.stock, '', '', '', '', '', '', '', '', Math.round(tot.cost), Math.round(tot.profit), '', '', '', '', '', ''],
     ])
 
   const exportSales = () =>
     download(`sales-vend-${stamp()}.csv`, [
-      ['Date', 'Time', 'Item', 'Qty', 'Sell per item (WL)', 'Total sales (WL)', 'Total modal (WL)', 'Profit (WL)', 'Market per item at sale (WL)'],
+      ['Date', 'Time', 'Item', 'Qty', 'Sell per item (WL)', 'Total sales (WL)', 'Total modal (WL)', 'Profit (WL)', 'Market per item at sale (WL)', 'Category'],
       ...rep.list.map((x) => {
         const d = new Date(x.ts)
-        return [`${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`, d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), x.name, x.qty, u4(x.revenue / x.qty), Math.round(x.revenue), Math.round(x.cost), Math.round(x.revenue - x.cost), x.mk === undefined ? '' : u4(x.mk)]
+        return [`${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`, d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), x.name, x.qty, u4(x.revenue / x.qty), Math.round(x.revenue), Math.round(x.cost), Math.round(x.revenue - x.cost), x.mk === undefined ? '' : u4(x.mk), x.cat ?? items.find((i) => i.id === x.itemId)?.cat ?? 'Other']
       }),
-      ['TOTAL', '', '', rep.units, '', Math.round(rep.revenue), Math.round(rep.cost), Math.round(rep.profit), ''],
+      ['TOTAL', '', '', rep.units, '', Math.round(rep.revenue), Math.round(rep.cost), Math.round(rep.profit), '', ''],
     ])
 
-  const exportItemsPdf = () =>
-    makePdf(
+  const exportItemsPdf = () => {
+    const groups = CATS.filter((g) => items.some((i) => catOf(i) === g))
+    const stat = (l: Item[]) => ({
+      stock: l.reduce((n, i) => n + i.qty, 0),
+      cost: l.reduce((n, i) => n + per(i.cr, i.cm) * i.qty, 0),
+      profit: l.reduce((n, i) => n + profitEach(i) * i.qty, 0),
+    })
+    const row = (i: Item) => {
+      const pe = profitEach(i)
+      const mkv = i.mp === undefined ? null : per(i.mp, i.mm ?? 'each')
+      const md = mkv && mkv > 0 ? Math.round((per(i.pr, i.pm) / mkv - 1) * 100) : null
+      return [
+        i.note ? `${i.name} (${i.note})` : i.name,
+        i.qty,
+        shown(i.cr, i.cm),
+        shown(i.pr, i.pm),
+        i.mp === undefined ? '-' : `${shown(i.mp, i.mm ?? 'each')}${i.mt ? ` (${dstr(i.mt)})` : ''}`,
+        md === null ? '-' : md === 0 ? 'Equal' : `${Math.abs(md)}% ${md > 0 ? 'above' : 'below'}`,
+        `${pe >= 0 ? '+' : ''}${wl(pe * i.qty)}`,
+      ]
+    }
+    return makePdf(
       `items-vend-${stamp()}.pdf`,
       'Vend Shop - Items',
       [
         `Date: ${dstr(Date.now())}`,
         `Items: ${items.length}   |   In stock: ${tot.stock}   |   Money tied up (modal): ${wl(tot.cost)}   |   Profit if all sold: ${wl(tot.profit)}`,
       ],
-      [{
-        head: ['Item', 'Stock', 'Modal', 'Sell', 'Market price (updated)', 'Sell vs market', 'Profit (all stock)'],
-        body: items.map((i) => {
-          const pe = profitEach(i)
-          const mkv = i.mp === undefined ? null : per(i.mp, i.mm ?? 'each')
-          const md = mkv && mkv > 0 ? Math.round((per(i.pr, i.pm) / mkv - 1) * 100) : null
-          return [
-            i.note ? `${i.name} (${i.note})` : i.name,
-            i.qty,
-            shown(i.cr, i.cm),
-            shown(i.pr, i.pm),
-            i.mp === undefined ? '-' : `${shown(i.mp, i.mm ?? 'each')}${i.mt ? ` (${dstr(i.mt)})` : ''}`,
-            md === null ? '-' : md === 0 ? 'Equal' : `${Math.abs(md)}% ${md > 0 ? 'above' : 'below'}`,
-            `${pe >= 0 ? '+' : ''}${wl(pe * i.qty)}`,
-          ]
+      [
+        {
+          title: 'SUMMARY BY CATEGORY',
+          head: ['Category', 'Items', 'In stock', 'Money tied up (modal)', 'Profit if all sold'],
+          body: groups.map((g) => {
+            const l = items.filter((i) => catOf(i) === g), t = stat(l)
+            return [g, l.length, t.stock, wl(t.cost), wl(t.profit)]
+          }),
+          foot: ['TOTAL', items.length, tot.stock, wl(tot.cost), wl(tot.profit)],
+        },
+        ...groups.map((g) => {
+          const l = items.filter((i) => catOf(i) === g).sort((x, y) => x.name.localeCompare(y.name))
+          const t = stat(l)
+          return {
+            title: `${g.toUpperCase()}  (${l.length} item${l.length > 1 ? 's' : ''})`,
+            head: ['Item', 'Stock', 'Modal', 'Sell', 'Market price (updated)', 'Sell vs market', 'Profit (all stock)'],
+            body: l.map(row),
+            foot: ['Subtotal', t.stock, '', '', '', '', wl(t.profit)],
+          }
         }),
-        foot: ['TOTAL', tot.stock, '', '', '', '', wl(tot.profit)],
-      }],
+      ],
     )
+  }
 
-  const exportSalesPdf = () =>
-    makePdf(
+  const exportSalesPdf = () => {
+    const catFor = (x: Sale) => x.cat ?? items.find((i) => i.id === x.itemId)?.cat ?? 'Other'
+    const groups = CATS.filter((g) => rep.list.some((x) => catFor(x) === g))
+    const sum = (l: Sale[]) => ({
+      units: l.reduce((n, x) => n + x.qty, 0),
+      revenue: l.reduce((n, x) => n + x.revenue, 0),
+      cost: l.reduce((n, x) => n + x.cost, 0),
+    })
+    const trow = (x: Sale) => {
+      const pf = x.revenue - x.cost
+      return [
+        dstr(x.ts),
+        new Date(x.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        x.name,
+        x.qty,
+        each(x.revenue / x.qty),
+        wl(x.revenue),
+        wl(x.cost),
+        `${pf >= 0 ? '+' : ''}${wl(pf)}`,
+        x.mk === undefined ? '-' : each(x.mk),
+      ]
+    }
+    return makePdf(
       `sales-vend-${stamp()}.pdf`,
       'Vend Shop - Sales Report',
       [
@@ -239,31 +295,31 @@ export default function App() {
       ],
       [
         {
-          title: 'By item',
+          title: 'SUMMARY BY CATEGORY',
+          head: ['Category', 'Transactions', 'Items sold', 'Total sales', 'Total modal', 'Profit'],
+          body: groups.map((g) => {
+            const l = rep.list.filter((x) => catFor(x) === g), t = sum(l)
+            return [g, l.length, t.units, wl(t.revenue), wl(t.cost), `${t.revenue - t.cost >= 0 ? '+' : ''}${wl(t.revenue - t.cost)}`]
+          }),
+          foot: ['TOTAL', rep.count, rep.units, wl(rep.revenue), wl(rep.cost), wl(rep.profit)],
+        },
+        {
+          title: 'BY ITEM',
           head: ['Item', 'Sold', 'Total sales', 'Profit'],
           body: rep.top.map((t) => [t.name, t.qty, wl(t.revenue), `${t.profit >= 0 ? '+' : ''}${wl(t.profit)}`]),
         },
-        {
-          title: 'Transactions',
-          head: ['Date', 'Time', 'Item', 'Qty', 'Sell each', 'Total sales', 'Modal', 'Profit', 'Market each (at sale)'],
-          body: rep.list.map((x) => {
-            const pf = x.revenue - x.cost
-            return [
-              dstr(x.ts),
-              new Date(x.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-              x.name,
-              x.qty,
-              each(x.revenue / x.qty),
-              wl(x.revenue),
-              wl(x.cost),
-              `${pf >= 0 ? '+' : ''}${wl(pf)}`,
-              x.mk === undefined ? '-' : each(x.mk),
-            ]
-          }),
-          foot: ['TOTAL', '', '', rep.units, '', wl(rep.revenue), wl(rep.cost), wl(rep.profit), ''],
-        },
+        ...groups.map((g) => {
+          const l = rep.list.filter((x) => catFor(x) === g), t = sum(l)
+          return {
+            title: `${g.toUpperCase()}  (${l.length} transaction${l.length > 1 ? 's' : ''})`,
+            head: ['Date', 'Time', 'Item', 'Qty', 'Sell each', 'Total sales', 'Modal', 'Profit', 'Market each (at sale)'],
+            body: l.map(trow),
+            foot: ['Subtotal', '', '', t.units, '', wl(t.revenue), wl(t.cost), wl(t.revenue - t.cost), ''],
+          }
+        }),
       ],
     )
+  }
 
   const c = per(parseFloat(form.cost), form.cm as Mode)
   const p = per(parseFloat(form.price), form.pm as Mode)
@@ -318,6 +374,11 @@ export default function App() {
           <label>Stock
             <input type="number" min="0" step="1" required value={form.qty} onChange={set('qty')} />
           </label>
+          <label>Category
+            <select value={form.cat} onChange={set('cat')} aria-label="Category">
+              {CATS.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </label>
           <label>Market price (optional)
             <input type="number" min="0" step="any" value={form.market} onChange={set('market')} placeholder="Price right now" />
             {modeSelect('mm')}
@@ -340,6 +401,11 @@ export default function App() {
           <option value="name">Name A-Z</option>
           <option value="profit">Highest profit</option>
           <option value="price">Highest sell price</option>
+          <option value="cat">Category</option>
+        </select>
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="Filter by category">
+          <option value="all">All categories</option>
+          {CATS.map((c) => <option key={c}>{c}</option>)}
         </select>
         <button className="pri" onClick={exportItemsPdf}>Download PDF</button>
         <button onClick={exportItems}>CSV</button>
@@ -355,7 +421,7 @@ export default function App() {
         const margin = i.cr > 0 ? Math.round((pe / per(i.cr, i.cm)) * 100) : null
         return (
           <div key={i.id} className={`item${i.qty === 0 ? ' out' : ''}`}>
-            <div className="name">{i.name}{i.note && <small>{i.note}</small>}</div>
+            <div className="name">{i.name}<small className="tag">{catOf(i)}</small>{i.note && <small>{i.note}</small>}</div>
             <div className="c"><small>Modal</small><b>{shown(i.cr, i.cm)}</b></div>
             <div className="c sell">
               <small>Sell</small><b>{shown(i.pr, i.pm)}</b>

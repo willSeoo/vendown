@@ -57,3 +57,4 @@ button:active{transform:translateY(1px)}
 .sum{grid-template-columns:repeat(3,1fr)}
 .tools button{white-space:nowrap}
 @media (max-width:720px){.tools{flex-wrap:wrap}}
+.name small.tag{display:inline-block;width:fit-content;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;margin:2px 0}
