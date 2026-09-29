@@ -47,3 +47,13 @@ button:active{transform:translateY(1px)}
  .sum b{font-size:18px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:8px 0;border-top:1px solid var(--line)}
+.row .g{flex:1 1 140px;font-weight:700;overflow-wrap:anywhere}
+.panel h2 small{color:var(--mute);font:400 13px "DM Sans",sans-serif;margin-left:10px}
+.row .g small{display:block;font-weight:400;color:var(--mute);font-size:12px}
+.sum{grid-template-columns:repeat(3,1fr)}
+.tools button{white-space:nowrap}
+@media (max-width:720px){.tools{flex-wrap:wrap}}
