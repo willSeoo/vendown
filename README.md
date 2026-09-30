@@ -8,6 +8,7 @@ A small PWA for tracking your Growtopia vend shop: item name, modal (cost), sell
 - Modal and sell price in WL each, or as bulk (e.g. `200 / 1 WL` = 200 items for 1 WL)
 - All values are rounded to whole WL; amounts of 100 WL or more also show as DL
 - Categories (Block, Background, Consumable, Surgery, Clothing, Seed, Item, Other): pick one per item, filter and sort by category; PDFs and CSVs are split into a section per category with subtotals
+- Discord promo templates: make several templates (e.g. one per Discord server/category) with header, footer, word before each item ("Sell"), separator (" | ") and price mode; copy the ready message. Messages over 2000 characters are split automatically
 - Optional market price per item (WL each or bulk), saved with the date you set it, and compared to your sell price (% above / below market). The market price at the time of each sale is stored in the sales report
 - Profit for all stock, margin, and totals (stock, money tied up, profit if all sold)
 - "Sold" button with a quantity box that reduces stock

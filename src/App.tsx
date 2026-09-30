@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 
 type Mode = 'each' | 'bulk'
-type Item = { id: number; name: string; note: string; qty: number; cr: number; pr: number; cm: Mode; pm: Mode; mp?: number; mm?: Mode; mt?: number; cat?: string }
+type Item = { id: number; name: string; note: string; qty: number; cr: number; pr: number; cm: Mode; pm: Mode; mp?: number; mm?: Mode; mt?: number; cat?: string; showPrice?: boolean }
 type Sale = { id: number; itemId: number; name: string; qty: number; revenue: number; cost: number; ts: number; mk?: number; cat?: string }
-type Form = { name: string; cost: string; price: string; qty: string; note: string; cm: string; pm: string; market: string; mm: string; cat: string }
+type Form = { name: string; cost: string; price: string; qty: string; note: string; cm: string; pm: string; market: string; mm: string; cat: string; showPrice: boolean }
 
 const KEY = 'vend-items-v1'
 const SKEY = 'vend-sales-v1'
-const empty: Form = { name: '', cost: '', price: '', qty: '1', note: '', cm: 'each', pm: 'each', market: '', mm: 'each', cat: 'Item' }
+const empty: Form = { name: '', cost: '', price: '', qty: '1', note: '', cm: 'each', pm: 'each', market: '', mm: 'each', cat: 'Item', showPrice: false }
 
 // bulk "200/1" means 200 items for 1 WL, so one item costs 1/200 WL
 const per = (raw: number, m: Mode) => (isNaN(raw) ? NaN : m === 'bulk' ? (raw > 0 ? 1 / raw : 0) : raw)
@@ -23,6 +23,37 @@ const profitEach = (i: Item) => per(i.pr, i.pm) - per(i.cr, i.cm)
 
 const CATS = ['Block', 'Background', 'Consumable', 'Surgery', 'Clothing', 'Seed', 'Item', 'Other']
 const catOf = (x: { cat?: string }) => x.cat ?? 'Other'
+type Template = { id: number; name: string; cat: string; header: string; footer: string; verb: string; sep: string; prices: 'none' | 'all' | 'marked'; stockOnly: boolean }
+type TForm = Omit<Template, 'id'>
+const emptyT: TForm = { name: '', cat: 'Block', header: 'SELL AT QLOUN', footer: 'SELL AT QLOUN', verb: 'Sell', sep: ' | ', prices: 'marked', stockOnly: true }
+
+// price as written in Discord: "2/1" for bulk, "3 WL", "2 DL"
+const promoPrice = (i: Item) => {
+  if (i.pm === 'bulk') return `${i.pr}/1`
+  const v = Math.round(i.pr)
+  return v >= 100 && v % 100 === 0 ? `${v / 100} DL` : `${v} WL`
+}
+
+// build the Discord messages (max 2000 characters each; header and footer repeat in every message)
+const buildPromo = (t: TForm, all: Item[]) => {
+  const list = all.filter((i) => (t.cat === 'all' || catOf(i) === t.cat) && (!t.stockOnly || i.qty > 0))
+  const parts = list.map((i) => {
+    const price = t.prices === 'all' || (t.prices === 'marked' && i.showPrice) ? promoPrice(i) : ''
+    return [t.verb.trim(), i.name, price].filter(Boolean).join(' ')
+  })
+  const head = t.header ? t.header + '\n\n' : ''
+  const foot = t.footer ? '\n\n' + t.footer : ''
+  const limit = 2000 - head.length - foot.length
+  const bodies: string[] = []
+  let cur = ''
+  for (const p of parts) {
+    const next = cur ? cur + t.sep + p : p
+    if (cur && next.length > limit) { bodies.push(cur); cur = p } else cur = next
+  }
+  if (cur) bodies.push(cur)
+  return { count: list.length, msgs: bodies.map((b) => head + b + foot) }
+}
+
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const stamp = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
 const dstr = (t: number) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
@@ -93,9 +124,16 @@ export default function App() {
   const [sales, setSales] = useState<Sale[]>(() => {
     try { return JSON.parse(localStorage.getItem(SKEY) || '[]') } catch { return [] }
   })
-  const [tab, setTab] = useState<'items' | 'report'>('items')
+  const [tab, setTab] = useState<'items' | 'report' | 'promo'>('items')
   const [range, setRange] = useState('7')
   const [catFilter, setCatFilter] = useState('all')
+  const [templates, setTemplates] = useState<Template[]>(() => {
+    try { return JSON.parse(localStorage.getItem('vend-templates-v1') || '[]') } catch { return [] }
+  })
+  const [tForm, setTForm] = useState<TForm>(emptyT)
+  const [tEditId, setTEditId] = useState<number | null>(null)
+  const [tSure, setTSure] = useState<number | null>(null)
+  const [copied, setCopied] = useState('')
   const [form, setForm] = useState<Form>(empty)
   const [editId, setEditId] = useState<number | null>(null)
   const [q, setQ] = useState('')
@@ -111,7 +149,11 @@ export default function App() {
     try { localStorage.setItem(SKEY, JSON.stringify(sales)) } catch { /* storage blocked */ }
   }, [sales])
 
-  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  useEffect(() => {
+    try { localStorage.setItem('vend-templates-v1', JSON.stringify(templates)) } catch { /* storage blocked */ }
+  }, [templates])
+
+  const set = (k: Exclude<keyof Form, 'showPrice'>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
   const reset = () => { setForm(empty); setEditId(null) }
@@ -125,13 +167,13 @@ export default function App() {
     const mm = form.mm as Mode
     const prev = items.find((i) => i.id === editId)
     const mt = mp === undefined ? undefined : !prev || prev.mp !== mp || prev.mm !== mm ? Date.now() : prev.mt
-    const d = { name: form.name.trim(), note: form.note.trim(), qty, cr, pr, cm: form.cm as Mode, pm: form.pm as Mode, mp, mm, mt, cat: form.cat }
+    const d = { name: form.name.trim(), note: form.note.trim(), qty, cr, pr, cm: form.cm as Mode, pm: form.pm as Mode, mp, mm, mt, cat: form.cat, showPrice: form.showPrice }
     setItems(editId === null ? [...items, { id: Date.now(), ...d }] : items.map((i) => (i.id === editId ? { ...i, ...d } : i)))
     reset()
   }
 
   const edit = (i: Item) => {
-    setForm({ name: i.name, cost: String(i.cr), price: String(i.pr), qty: String(i.qty), note: i.note, cm: i.cm, pm: i.pm, market: i.mp === undefined ? '' : String(i.mp), mm: i.mm ?? 'each', cat: catOf(i) })
+    setForm({ name: i.name, cost: String(i.cr), price: String(i.pr), qty: String(i.qty), note: i.note, cm: i.cm, pm: i.pm, market: i.mp === undefined ? '' : String(i.mp), mm: i.mm ?? 'each', cat: catOf(i), showPrice: !!i.showPrice })
     setEditId(i.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -321,6 +363,43 @@ export default function App() {
     )
   }
 
+  const setT = (k: 'name' | 'cat' | 'header' | 'footer' | 'verb' | 'sep' | 'prices') => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setTForm((f) => ({ ...f, [k]: e.target.value }))
+
+  const resetT = () => { setTForm(emptyT); setTEditId(null) }
+
+  const saveT = (e: React.FormEvent) => {
+    e.preventDefault()
+    const data = { ...tForm, name: tForm.name.trim() }
+    if (!data.name) return
+    setTemplates(tEditId === null ? [...templates, { id: Date.now(), ...data }] : templates.map((t) => (t.id === tEditId ? { ...t, ...data } : t)))
+    resetT()
+  }
+
+  const editT = (t: Template) => {
+    setTForm({ name: t.name, cat: t.cat, header: t.header, footer: t.footer, verb: t.verb, sep: t.sep, prices: t.prices, stockOnly: t.stockOnly })
+    setTEditId(t.id)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const removeT = (id: number) => {
+    if (tSure === id) {
+      setTemplates(templates.filter((t) => t.id !== id))
+      if (tEditId === id) resetT()
+      setTSure(null)
+    } else {
+      setTSure(id)
+      setTimeout(() => setTSure((x) => (x === id ? null : x)), 3000)
+    }
+  }
+
+  const copy = async (key: string, text: string) => {
+    let ok = true
+    try { await navigator.clipboard.writeText(text) } catch { ok = false }
+    setCopied(key + (ok ? ':ok' : ':fail'))
+    setTimeout(() => setCopied(''), 1800)
+  }
+
   const c = per(parseFloat(form.cost), form.cm as Mode)
   const p = per(parseFloat(form.price), form.pm as Mode)
   const d = p - c
@@ -347,6 +426,7 @@ export default function App() {
       <div className="tabs">
         <button aria-pressed={tab === 'items'} onClick={() => setTab('items')}>Items</button>
         <button aria-pressed={tab === 'report'} onClick={() => setTab('report')}>Sales report</button>
+        <button aria-pressed={tab === 'promo'} onClick={() => setTab('promo')}>Discord promo</button>
       </div>
 
       {tab === 'items' && (
@@ -385,6 +465,10 @@ export default function App() {
           </label>
           <label className="note">Note (optional)
             <input maxLength={120} value={form.note} onChange={set('note')} placeholder="Where you bought it, vend world, etc." />
+          </label>
+          <label className="chk">
+            <input type="checkbox" checked={form.showPrice} onChange={(e) => setForm((f) => ({ ...f, showPrice: e.target.checked }))} />
+            Show this item's price in Discord promo
           </label>
           <div className="preview">{preview}</div>
           <div className="btns">
@@ -500,6 +584,81 @@ export default function App() {
                     <button className="sm" onClick={() => undo(x)}>Undo</button>
                   </div>
                 ))}
+              </section>
+            )
+          })}
+        </>
+      )}
+      {tab === 'promo' && (
+        <>
+          <section className="panel">
+            <h2>{tEditId === null ? 'New promo template' : 'Edit template'}</h2>
+            <form onSubmit={saveT} autoComplete="off" className="tform">
+              <label>Template name
+                <input required maxLength={40} value={tForm.name} onChange={setT('name')} placeholder="e.g. Block server" />
+              </label>
+              <label>Items from category
+                <select value={tForm.cat} onChange={setT('cat')}>
+                  <option value="all">All categories</option>
+                  {CATS.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </label>
+              <label>Header text
+                <input value={tForm.header} onChange={setT('header')} placeholder="SELL AT QLOUN" />
+              </label>
+              <label>Footer text
+                <input value={tForm.footer} onChange={setT('footer')} placeholder="SELL AT QLOUN" />
+              </label>
+              <label>Word before each item
+                <input value={tForm.verb} onChange={setT('verb')} placeholder="Sell" />
+              </label>
+              <label>Separator
+                <input value={tForm.sep} onChange={setT('sep')} placeholder=" | " />
+              </label>
+              <label>Prices
+                <select value={tForm.prices} onChange={setT('prices')}>
+                  <option value="marked">Only items marked "Show price"</option>
+                  <option value="all">All items</option>
+                  <option value="none">No prices</option>
+                </select>
+              </label>
+              <label className="chk">
+                <input type="checkbox" checked={tForm.stockOnly} onChange={(e) => setTForm((f) => ({ ...f, stockOnly: e.target.checked }))} />
+                Only items that are in stock
+              </label>
+              <div className="btns">
+                <button className="pri" type="submit">{tEditId === null ? 'Add template' : 'Save changes'}</button>
+                {tEditId !== null && <button type="button" onClick={resetT}>Cancel edit</button>}
+              </div>
+            </form>
+          </section>
+
+          {templates.length === 0 && <div className="empty">No templates yet. Make one for each Discord server, then copy and paste.</div>}
+          {templates.map((t) => {
+            const r = buildPromo(t, items)
+            return (
+              <section className="panel" key={t.id}>
+                <h2>{t.name}<small>{t.cat === 'all' ? 'All categories' : t.cat} - {r.count} items - {r.msgs.length} message{r.msgs.length === 1 ? '' : 's'}</small></h2>
+                {r.msgs.length === 0 && <p className="sub">No items match this template yet.</p>}
+                {r.msgs.map((m, k) => {
+                  const key = `${t.id}-${k}`
+                  return (
+                    <div className="msg" key={k}>
+                      <textarea readOnly rows={6} value={m} onFocus={(e) => e.currentTarget.select()} aria-label={`Message ${k + 1}`} />
+                      <div className="mrow">
+                        <span>{r.msgs.length > 1 ? `Message ${k + 1} of ${r.msgs.length} - ` : ''}{m.length} / 2000 characters</span>
+                        <button className="pri sm" onClick={() => copy(key, m)}>
+                          {copied === key + ':ok' ? 'Copied!' : copied === key + ':fail' ? 'Copy failed, select the text' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="btns">
+                  <button className="sm" onClick={() => editT(t)}>Edit</button>
+                  <button className="sm" onClick={() => setTemplates([...templates, { ...t, id: Date.now(), name: `${t.name} (copy)` }])}>Duplicate</button>
+                  <button className="sm del" onClick={() => removeT(t.id)}>{tSure === t.id ? 'Confirm delete' : 'Delete'}</button>
+                </div>
               </section>
             )
           })}
