@@ -210,6 +210,7 @@ export default function App() {
   const [imgMsg, setImgMsg] = useState('')
   const [sugFor, setSugFor] = useState('')
   const [open, setOpen] = useState('')
+  const [openIds, setOpenIds] = useState<number[]>([])
   const [builtin, setBuiltin] = useState<Record<string, { name: string; url: string }>>({})
   const [form, setForm] = useState<Form>(empty)
   const [editId, setEditId] = useState<number | null>(null)
@@ -475,6 +476,10 @@ export default function App() {
     )
   }
 
+  const toggleOpen = (id: number) => setOpenIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
+  const allOpen = list.length > 0 && list.every((i) => openIds.includes(i.id))
+  const toggleAll = () => setOpenIds(allOpen ? [] : list.map((i) => i.id))
+
   const hasImg = (n: string) => !!(imgs[nkey(n)] ?? builtin[nkey(n)])
   const names = Array.from(new Set([...items.map((i) => i.name), ...market.map((m) => m.name)]))
 
@@ -681,9 +686,8 @@ export default function App() {
 
   return (
     <main>
-      <h1>Vend Shop Tracker</h1>
-      <p className="sub">Keep every item's cost (modal), sell price and stock in one place. Prices are in World Locks (WL). 100 WL = 1 DL.</p>
-
+      <header className="top">
+        <h1>Vend Shop Tracker</h1>
       <nav className="tabs" aria-label="Main">
         {([['items', '📦', 'Items'], ['report', '🧾', 'Sales'], ['market', '📈', 'Market'], ['promo', '📣', 'Promo'], ['images', '🖼️', 'Images']] as const).map(([k, icon, label]) => (
           <button key={k} aria-pressed={tab === k} onClick={() => { setTab(k); window.scrollTo({ top: 0 }) }}>
@@ -691,6 +695,8 @@ export default function App() {
           </button>
         ))}
       </nav>
+      </header>
+      <p className="sub">Keep every item's cost (modal), sell price and stock in one place. Prices are in World Locks (WL). 100 WL = 1 DL.</p>
 
       {tab === 'items' && (
         <>
@@ -762,38 +768,59 @@ export default function App() {
       {list.length === 0 && (
         <div className="empty">{items.length ? 'No items match your search.' : 'No items yet. Add your first item above.'}</div>
       )}
+      {list.length > 0 && (
+        <div className="listbar">
+          <span>{list.length} item{list.length === 1 ? '' : 's'}</span>
+          <button className="sm" onClick={toggleAll}>{allOpen ? 'Collapse all' : 'Expand all'}</button>
+        </div>
+      )}
+      <div className="itemlist">
       {list.map((i) => {
+        const isOpen = openIds.includes(i.id)
         const pe = profitEach(i)
         const mkt = i.mp === undefined ? null : per(i.mp, i.mm ?? 'each')
         const md = mkt && mkt > 0 ? Math.round((per(i.pr, i.pm) / mkt - 1) * 100) : null
         const margin = i.cr > 0 ? Math.round((pe / per(i.cr, i.cm)) * 100) : null
         return (
-          <div key={i.id} className={`item${i.qty === 0 ? ' out' : ''}`}>
-            <div className="name nm">{thumb(i.name)}<div>{i.name}<small className="tag">{catOf(i)}</small>{i.note && <small>{i.note}</small>}</div></div>
-            <div className="c"><small>Modal</small><b>{shown(i.cr, i.cm)}</b></div>
-            <div className="c sell">
-              <small>Sell</small><b>{shown(i.pr, i.pm)}</b>
-              {i.mp !== undefined && (
-                <small>Market: {shown(i.mp, i.mm ?? 'each')}{i.mt ? ` (${new Date(i.mt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})` : ''}</small>
-              )}
-              {md !== null && <small>{md === 0 ? 'Equal to market' : `${Math.abs(md)}% ${md > 0 ? 'above' : 'below'} market`}</small>}
-            </div>
-            <div className="c">
-              <small>Profit (all stock)</small>
-              <b className={pe >= 0 ? 'up' : 'down'}>{pe >= 0 ? '+' : ''}{wl(pe * i.qty)}</b>
-              {margin !== null && <small>{margin}% margin</small>}
-            </div>
-            <div className="c"><small>Stock</small><b>{i.qty}{i.qty === 0 ? ' (sold out)' : ''}</b></div>
-            <div className="act">
-              <input className="sq" type="number" min="1" max={i.qty} value={sold[i.id] ?? '1'} disabled={i.qty === 0}
-                onChange={(e) => setSold({ ...sold, [i.id]: e.target.value })} aria-label="Quantity sold" />
-              <button className="sm" disabled={i.qty === 0} onClick={() => sell(i)}>Sold</button>
-              <button className="sm" onClick={() => edit(i)}>Edit</button>
-              <button className="sm del" onClick={() => remove(i.id)}>{sure === i.id ? 'Confirm delete' : 'Delete'}</button>
-            </div>
+          <div key={i.id} className={`item${i.qty === 0 ? ' out' : ''}${isOpen ? ' open' : ''}`}>
+            <button className="ihead" aria-expanded={isOpen} onClick={() => toggleOpen(i.id)}>
+              {thumb(i.name)}
+              <span className="itxt">
+                <b>{i.name}</b>
+                <span><small className="tag">{catOf(i)}</small>{i.qty === 0 && <small className="tag">Sold out</small>}</span>
+              </span>
+              <span className="chev" aria-hidden="true">▾</span>
+            </button>
+            {isOpen && (
+              <div className="ibody">
+                {i.note && <div className="inote">{i.note}</div>}
+                <div className="c"><small>Modal</small><b>{shown(i.cr, i.cm)}</b></div>
+                <div className="c sell">
+                  <small>Sell</small><b>{shown(i.pr, i.pm)}</b>
+                  {i.mp !== undefined && (
+                    <small>Market: {shown(i.mp, i.mm ?? 'each')}{i.mt ? ` (${new Date(i.mt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})` : ''}</small>
+                  )}
+                  {md !== null && <small>{md === 0 ? 'Equal to market' : `${Math.abs(md)}% ${md > 0 ? 'above' : 'below'} market`}</small>}
+                </div>
+                <div className="c">
+                  <small>Profit (all stock)</small>
+                  <b className={pe >= 0 ? 'up' : 'down'}>{pe >= 0 ? '+' : ''}{wl(pe * i.qty)}</b>
+                  {margin !== null && <small>{margin}% margin</small>}
+                </div>
+                <div className="c"><small>Stock</small><b>{i.qty}{i.qty === 0 ? ' (sold out)' : ''}</b></div>
+                <div className="act">
+                  <input className="sq" type="number" min="1" max={i.qty} value={sold[i.id] ?? '1'} disabled={i.qty === 0}
+                    onChange={(e) => setSold({ ...sold, [i.id]: e.target.value })} aria-label="Quantity sold" />
+                  <button className="sm" disabled={i.qty === 0} onClick={() => sell(i)}>Sold</button>
+                  <button className="sm" onClick={() => edit(i)}>Edit</button>
+                  <button className="sm del" onClick={() => remove(i.id)}>{sure === i.id ? 'Confirm delete' : 'Delete'}</button>
+                </div>
+              </div>
+            )}
           </div>
         )
       })}
+      </div>
       <p className="sub" style={{ marginTop: 16 }}>Your items are saved in this browser on this device only.</p>
         </>
       )}
@@ -901,6 +928,7 @@ export default function App() {
           )}
 
           {templates.length === 0 && <div className="empty">No templates yet. Make one for each Discord server, then copy and paste.</div>}
+          <div className="cards">
           {templates.map((t) => {
             const r = buildPromo(t, items)
             return (
@@ -929,6 +957,7 @@ export default function App() {
               </section>
             )
           })}
+          </div>
         </>
       )}
       {tab === 'market' && (
@@ -967,6 +996,7 @@ export default function App() {
             <input type="search" value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search market items" aria-label="Search market items" />
           </div>
           {market.length === 0 && <div className="empty">No price notes yet. Add the first one above; it also updates the market price of a matching item.</div>}
+          <div className="cards">
           {market
             .filter((m) => !mq.trim() || m.name.toLowerCase().includes(mq.trim().toLowerCase()))
             .sort((a, b) => a.name.localeCompare(b.name))
@@ -1004,6 +1034,7 @@ export default function App() {
                 </section>
               )
             })}
+          </div>
         </>
       )}
 

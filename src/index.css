@@ -52,13 +52,23 @@ button:active{transform:translateY(1px)}
 .tabs button span{font-size:20px;line-height:1}
 .tabs button[aria-pressed="true"]{background:var(--bg);color:var(--accent)}
 
-/* item cards */
-.item{background:var(--panel);border:2px solid var(--line);border-left:6px solid var(--wood);border-radius:10px;padding:12px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
-.item.out{opacity:.7;border-left-color:var(--line)}
-.item .name,.item .act{grid-column:1/-1}
-.name{font-weight:700;overflow-wrap:anywhere}
-.name small{display:block;font-weight:400;color:var(--mute);font-size:13px}
-.name small.tag{display:inline-block;width:fit-content;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;margin:2px 0}
+/* item cards: collapsed by default, tap the name to open */
+.itemlist,.cards{display:grid;grid-template-columns:1fr;gap:10px;align-items:start;margin-bottom:12px}
+.cards>.panel{margin-bottom:0}
+.listbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;color:var(--mute);font-size:14px}
+.item{background:var(--panel);border:2px solid var(--line);border-left:6px solid var(--wood);border-radius:10px;overflow:hidden}
+.item.out{border-left-color:var(--line)}
+.item.out .ihead{opacity:.7}
+.ihead{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:0;background:transparent;text-align:left;padding:8px 12px;min-height:60px;color:var(--ink);font:inherit}
+.ihead:hover{background:var(--bg)}
+.itxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.itxt b{overflow-wrap:anywhere;font-weight:700;font-size:16px;line-height:1.25}
+.chev{flex:none;font-size:18px;color:var(--mute);transition:transform .15s}
+.item.open .chev{transform:rotate(180deg)}
+.ibody{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px 12px;border-top:1px dashed var(--line)}
+.ibody .inote,.ibody .act{grid-column:1/-1}
+.inote{color:var(--mute);font-size:14px;overflow-wrap:anywhere}
+small.tag{display:inline-block;width:fit-content;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;margin:2px 4px 2px 0;color:var(--mute)}
 .c{background:var(--bg);border-radius:8px;padding:8px 10px;min-width:0}
 .c small{display:block;color:var(--mute);font-size:12px}
 .c b{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -67,6 +77,7 @@ button:active{transform:translateY(1px)}
 .act{display:flex;gap:8px;align-items:center}
 .sq{width:72px;flex:none;padding:6px 8px}
 .act .sq + button{flex:1;background:var(--accent);border-color:var(--accent);color:#fff}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .empty{text-align:center;color:var(--mute);padding:24px 12px;border:2px dashed var(--line);border-radius:10px;margin-bottom:12px}
 
 /* report rows, market, images, promo */
@@ -105,11 +116,11 @@ details{margin:10px 0}summary{cursor:pointer;color:var(--accent);font-weight:700
   main{padding:20px 16px 48px}
   h1{font-size:30px}
   .sub{font-size:16px}
-  .sum{grid-template-columns:repeat(3,1fr);gap:10px}
+  .sum{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
   .sum>div:last-child:nth-child(odd){grid-column:auto}
   .sum b{font-size:22px}
   .panel{padding:14px}
-  form:not(.tform){grid-template-columns:2fr 1fr 1fr 1fr}
+  form:not(.tform){grid-template-columns:repeat(3,1fr)}
   .tform{grid-template-columns:1fr 1fr}
   input,select,textarea{min-height:40px;padding:8px 10px}
   button{min-height:40px}
@@ -122,11 +133,19 @@ details{margin:10px 0}summary{cursor:pointer;color:var(--accent);font-weight:700
   .tabs button{flex-direction:row;gap:6px;border:2px solid var(--ink);background:var(--panel);color:var(--ink);font-size:14px;min-height:40px;padding:8px 14px}
   .tabs button span{font-size:16px}
   .tabs button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
-  .item{grid-template-columns:1.6fr repeat(4,1fr) auto;gap:8px 12px;align-items:center;padding:12px}
-  .item .name,.item .act{grid-column:auto}
-  .c{background:none;padding:0}
   .act{justify-content:flex-end}
-  .act .sq + button{flex:none}
+  .act .sq + button{flex:none;min-width:96px}
+  .top{position:sticky;top:0;z-index:35;background:var(--bg);padding:10px 0;margin-bottom:12px;border-bottom:2px solid var(--line)}
+  .top h1{margin:0}
+  .tabs{margin:0}
   .igrid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
   .sug{max-height:300px}
+}
+@media (min-width:900px){
+  main{max-width:1200px}
+  .itemlist,.cards{grid-template-columns:1fr 1fr}
+}
+@media (min-width:1300px){
+  main{max-width:1280px}
+  .itemlist{grid-template-columns:1fr 1fr 1fr}
 }

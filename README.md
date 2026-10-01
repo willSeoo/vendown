@@ -15,6 +15,8 @@ A small PWA for tracking your Growtopia vend shop: item name, modal (cost), sell
 - Name suggestions: typing an item name (stock or market form) shows matching names with their pictures; picking one also fills the category and latest market price when known
 - PDFs show the item picture next to the item name
 - Mobile first: bottom tab bar with big touch targets, item cards with a large Sold button, forms that open with a "+ Add" button, 16px inputs (no zoom on iPhone), safe-area aware; on desktop the tabs move to the top
+- Item cards are collapsed by default (picture, name, category); tap the name to open modal, sell, market, profit, stock and the Sold / Edit / Delete buttons. "Expand all" / "Collapse all" toggles the whole list
+- Desktop layout: sticky top bar with tabs, item and market cards in 2 to 3 columns, 3-column forms
 - Optional market price per item (WL each or bulk), saved with the date you set it, and compared to your sell price (% above / below market). The market price at the time of each sale is stored in the sales report
 - Profit for all stock, margin, and totals (stock, money tied up, profit if all sold)
 - "Sold" button with a quantity box that reduces stock
