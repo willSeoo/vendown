@@ -96,6 +96,22 @@ const shrink = async (file: File, max = 160): Promise<Blob> => {
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('image'))), 'image/webp', 0.85))
 }
 
+// any picture (webp etc.) to a crisp png data URL for the PDF
+const toPng = (url: string) => new Promise<string | null>((res) => {
+  const im = new Image()
+  im.onload = () => {
+    const c = document.createElement('canvas')
+    c.width = c.height = 64
+    const x = c.getContext('2d')!
+    x.imageSmoothingEnabled = false
+    const k = Math.min(64 / im.width, 64 / im.height), w = im.width * k, h = im.height * k
+    x.drawImage(im, (64 - w) / 2, (64 - h) / 2, w, h)
+    res(c.toDataURL('image/png'))
+  }
+  im.onerror = () => res(null)
+  im.src = url
+})
+
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const stamp = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
 const dstr = (t: number) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
@@ -120,10 +136,10 @@ const download = (name: string, rows: (string | number)[][]) => {
 
 const RANGES: Record<string, string> = { today: 'Today', '7': 'Last 7 days', '30': 'Last 30 days', all: 'All time' }
 
-type PdfTable = { title?: string; head: string[]; body: (string | number)[][]; foot?: (string | number)[] }
+type PdfTable = { imgNames?: string[]; imgCol?: number; title?: string; head: string[]; body: (string | number)[][]; foot?: (string | number)[] }
 
 // build and save a PDF (loaded on demand so the app starts fast)
-const makePdf = async (name: string, title: string, lines: string[], tables: PdfTable[]) => {
+const makePdf = async (name: string, title: string, lines: string[], tables: PdfTable[], pics: Record<string, string> = {}) => {
   const { jsPDF } = await import('jspdf')
   const autoTable = (await import('jspdf-autotable')).default
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
@@ -152,6 +168,13 @@ const makePdf = async (name: string, title: string, lines: string[], tables: Pdf
       headStyles: { fillColor: [225, 234, 244], textColor: 20 },
       footStyles: { fillColor: [230, 240, 247], textColor: 20 },
       margin: { left: 40, right: 40 },
+      columnStyles: t.imgNames ? { [t.imgCol ?? 0]: { cellPadding: { top: 4, bottom: 4, left: 32, right: 4 } } } : undefined,
+      bodyStyles: t.imgNames ? { minCellHeight: 28, valign: 'middle' } : undefined,
+      didDrawCell: (d) => {
+        if (!t.imgNames || d.section !== 'body' || d.column.index !== (t.imgCol ?? 0)) return
+        const nm = t.imgNames[d.row.index], k = nm ? nkey(nm) : ''
+        if (k && pics[k]) doc.addImage(pics[k], 'PNG', d.cell.x + 5, d.cell.y + (d.cell.height - 22) / 2, 22, 22, k)
+      },
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     y = (doc as any).lastAutoTable.finalY + 22
@@ -185,6 +208,8 @@ export default function App() {
   const [mq, setMq] = useState('')
   const [imgs, setImgs] = useState<Record<string, { name: string; url: string }>>({})
   const [imgMsg, setImgMsg] = useState('')
+  const [sugFor, setSugFor] = useState('')
+  const [open, setOpen] = useState('')
   const [builtin, setBuiltin] = useState<Record<string, { name: string; url: string }>>({})
   const [form, setForm] = useState<Form>(empty)
   const [editId, setEditId] = useState<number | null>(null)
@@ -233,7 +258,7 @@ export default function App() {
   const set = (k: Exclude<keyof Form, 'showPrice'>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  const reset = () => { setForm(empty); setEditId(null) }
+  const reset = () => { setForm(empty); setEditId(null); setOpen('') }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -253,6 +278,7 @@ export default function App() {
   const edit = (i: Item) => {
     setForm({ name: i.name, cost: String(i.cr), price: String(i.pr), qty: String(i.qty), note: i.note, cm: i.cm, pm: i.pm, market: i.mp === undefined ? '' : String(i.mp), mm: i.mm ?? 'each', cat: catOf(i), showPrice: !!i.showPrice })
     setEditId(i.id)
+    setOpen('item')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -332,7 +358,8 @@ export default function App() {
       ['TOTAL', '', '', rep.units, '', Math.round(rep.revenue), Math.round(rep.cost), Math.round(rep.profit), '', ''],
     ])
 
-  const exportItemsPdf = () => {
+  const exportItemsPdf = async () => {
+    const pics = await loadPics(items.map((i) => i.name))
     const groups = CATS.filter((g) => items.some((i) => catOf(i) === g))
     const stat = (l: Item[]) => ({
       stock: l.reduce((n, i) => n + i.qty, 0),
@@ -377,14 +404,17 @@ export default function App() {
             title: `${g.toUpperCase()}  (${l.length} item${l.length > 1 ? 's' : ''})`,
             head: ['Item', 'Stock', 'Modal', 'Sell', 'Market price (updated)', 'Sell vs market', 'Profit (all stock)'],
             body: l.map(row),
+            imgNames: l.map((i) => i.name),
             foot: ['Subtotal', t.stock, '', '', '', '', wl(t.profit)],
           }
         }),
       ],
+      pics,
     )
   }
 
-  const exportSalesPdf = () => {
+  const exportSalesPdf = async () => {
+    const pics = await loadPics(rep.list.map((x) => x.name))
     const catFor = (x: Sale) => x.cat ?? items.find((i) => i.id === x.itemId)?.cat ?? 'Other'
     const groups = CATS.filter((g) => rep.list.some((x) => catFor(x) === g))
     const sum = (l: Sale[]) => ({
@@ -427,6 +457,7 @@ export default function App() {
           title: 'BY ITEM',
           head: ['Item', 'Sold', 'Total sales', 'Profit'],
           body: rep.top.map((t) => [t.name, t.qty, wl(t.revenue), `${t.profit >= 0 ? '+' : ''}${wl(t.profit)}`]),
+          imgNames: rep.top.map((t) => t.name),
         },
         ...groups.map((g) => {
           const l = rep.list.filter((x) => catFor(x) === g), t = sum(l)
@@ -434,10 +465,13 @@ export default function App() {
             title: `${g.toUpperCase()}  (${l.length} transaction${l.length > 1 ? 's' : ''})`,
             head: ['Date', 'Time', 'Item', 'Qty', 'Sell each', 'Total sales', 'Modal', 'Profit', 'Market each (at sale)'],
             body: l.map(trow),
+            imgNames: l.map((x) => x.name),
+            imgCol: 2,
             foot: ['Subtotal', '', '', t.units, '', wl(t.revenue), wl(t.cost), wl(t.revenue - t.cost), ''],
           }
         }),
       ],
+      pics,
     )
   }
 
@@ -483,11 +517,13 @@ export default function App() {
     pushLatest(touched)
     setMForm({ ...mForm, price: '', note: '' })
     setMEdit(null)
+    setOpen('')
   }
 
   const editEntry = (m: MItem, x: MEntry) => {
     setMForm({ name: m.name, cat: m.cat, price: String(x.raw), mode: x.mode, date: x.date, note: x.note })
     setMEdit({ item: m.id, entry: x.id })
+    setOpen('market')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -525,21 +561,72 @@ export default function App() {
     setImgs((cur) => { const c = { ...cur }; if (c[key]) URL.revokeObjectURL(c[key].url); delete c[key]; return c })
   }
 
-  // small picture box; click it to add or replace the image for that item name
+  // small picture box (display only)
   const thumb = (name: string) => {
     const im = imgs[nkey(name)] ?? builtin[nkey(name)]
+    return <span className="thumb">{im ? <img src={im.url} alt="" draggable={false} /> : <span aria-hidden="true">?</span>}</span>
+  }
+
+  const catalog = Array.from(
+    new Map([...Object.values(builtin), ...Object.values(imgs), ...market, ...items].map((x): [string, string] => [nkey(x.name), x.name])).values(),
+  )
+
+  // name input with suggestions (picture + name)
+  const suggestBox = (id: string, value: string, onType: (v: string) => void, onPick: (n: string) => void) => {
+    const q = nkey(value)
+    const sugs = q
+      ? catalog
+          .filter((n) => nkey(n).includes(q) && nkey(n) !== q)
+          .sort((a, b) => Number(nkey(b).startsWith(q)) - Number(nkey(a).startsWith(q)) || a.localeCompare(b))
+          .slice(0, 8)
+      : []
     return (
-      <label className="thumb" title={im ? `Replace image: ${name}` : `Add image for ${name}`}>
-        {im ? <img src={im.url} alt={name} /> : <span aria-hidden="true">+</span>}
-        <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) saveImage(name, f); e.target.value = '' }} />
-      </label>
+      <div className="sugwrap">
+        <label>Item name
+          <input
+            required maxLength={60} value={value} autoComplete="off" placeholder="e.g. Climbing Vine"
+            onChange={(e) => { onType(e.target.value); setSugFor(id) }}
+            onFocus={() => setSugFor(id)}
+            onBlur={() => setTimeout(() => setSugFor((v) => (v === id ? '' : v)), 150)}
+          />
+        </label>
+        {sugFor === id && sugs.length > 0 && (
+          <ul className="sug" role="listbox" aria-label="Suggestions">
+            {sugs.map((n) => (
+              <li key={n} role="option" aria-selected="false" onMouseDown={(e) => { e.preventDefault(); onPick(n); setSugFor('') }}>
+                {thumb(n)}<span>{n}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     )
+  }
+
+  // picking a suggestion in the stock form also fills category and market price if known
+  const pickStock = (n: string) => {
+    const m = market.find((x) => nkey(x.name) === nkey(n))
+    const l = m && latestOf(m)
+    setForm((f) => ({ ...f, name: n, ...(m ? { cat: m.cat } : {}), ...(l ? { market: String(l.raw), mm: l.mode } : {}) }))
+  }
+
+  // pictures for the PDF (png data, drawn at the item name)
+  const loadPics = async (list: string[]) => {
+    const out: Record<string, string> = {}
+    for (const n of list) {
+      const k = nkey(n)
+      if (k in out) continue
+      const im = imgs[k] ?? builtin[k]
+      const d = im ? await toPng(im.url) : null
+      if (d) out[k] = d
+    }
+    return out
   }
 
   const setT = (k: 'name' | 'cat' | 'header' | 'footer' | 'verb' | 'sep' | 'prices') => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setTForm((f) => ({ ...f, [k]: e.target.value }))
 
-  const resetT = () => { setTForm(emptyT); setTEditId(null) }
+  const resetT = () => { setTForm(emptyT); setTEditId(null); setOpen('') }
 
   const saveT = (e: React.FormEvent) => {
     e.preventDefault()
@@ -552,6 +639,7 @@ export default function App() {
   const editT = (t: Template) => {
     setTForm({ name: t.name, cat: t.cat, header: t.header, footer: t.footer, verb: t.verb, sep: t.sep, prices: t.prices, stockOnly: t.stockOnly })
     setTEditId(t.id)
+    setOpen('promo')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -587,7 +675,7 @@ export default function App() {
   const modeSelect = (k: 'cm' | 'pm' | 'mm') => (
     <select value={form[k]} onChange={set(k)} aria-label={k === 'cm' ? 'Modal type' : k === 'pm' ? 'Sell price type' : 'Market price type'}>
       <option value="each">WL each</option>
-      <option value="bulk">items per 1 WL (e.g. 200/1)</option>
+      <option value="bulk">per 1 WL (e.g. 200/1)</option>
     </select>
   )
 
@@ -596,13 +684,13 @@ export default function App() {
       <h1>Vend Shop Tracker</h1>
       <p className="sub">Keep every item's cost (modal), sell price and stock in one place. Prices are in World Locks (WL). 100 WL = 1 DL.</p>
 
-      <div className="tabs">
-        <button aria-pressed={tab === 'items'} onClick={() => setTab('items')}>Items</button>
-        <button aria-pressed={tab === 'report'} onClick={() => setTab('report')}>Sales report</button>
-        <button aria-pressed={tab === 'promo'} onClick={() => setTab('promo')}>Discord promo</button>
-        <button aria-pressed={tab === 'market'} onClick={() => setTab('market')}>Market</button>
-        <button aria-pressed={tab === 'images'} onClick={() => setTab('images')}>Images</button>
-      </div>
+      <nav className="tabs" aria-label="Main">
+        {([['items', '📦', 'Items'], ['report', '🧾', 'Sales'], ['market', '📈', 'Market'], ['promo', '📣', 'Promo'], ['images', '🖼️', 'Images']] as const).map(([k, icon, label]) => (
+          <button key={k} aria-pressed={tab === k} onClick={() => { setTab(k); window.scrollTo({ top: 0 }) }}>
+            <span aria-hidden="true">{icon}</span>{label}
+          </button>
+        ))}
+      </nav>
 
       {tab === 'items' && (
         <>
@@ -612,12 +700,12 @@ export default function App() {
         <div><b>{wl(tot.profit)}</b><span>Profit if all sold</span></div>
       </div>
 
+      {open !== 'item' && <button className="pri add" onClick={() => setOpen('item')}>+ Add item</button>}
+      {open === 'item' && (
       <section className="panel">
         <h2>{editId === null ? 'Add item' : 'Edit item'}</h2>
         <form onSubmit={submit} autoComplete="off">
-          <label>Item name
-            <input required maxLength={60} value={form.name} onChange={set('name')} placeholder="e.g. Angel Wings" />
-          </label>
+          {suggestBox('stock', form.name, (v) => setForm((f) => ({ ...f, name: v })), pickStock)}
           <label>Modal
             <input type="number" min="0" step="any" required value={form.cost} onChange={set('cost')} placeholder="0" />
             {modeSelect('cm')}
@@ -648,10 +736,11 @@ export default function App() {
           <div className="preview">{preview}</div>
           <div className="btns">
             <button className="pri" type="submit">{editId === null ? 'Add item' : 'Save changes'}</button>
-            {editId !== null && <button type="button" onClick={reset}>Cancel edit</button>}
+            <button type="button" onClick={reset}>Cancel</button>
           </div>
         </form>
       </section>
+      )}
 
       <div className="tools">
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items" aria-label="Search items" />
@@ -766,6 +855,8 @@ export default function App() {
       )}
       {tab === 'promo' && (
         <>
+          {open !== 'promo' && <button className="pri add" onClick={() => setOpen('promo')}>+ New template</button>}
+          {open === 'promo' && (
           <section className="panel">
             <h2>{tEditId === null ? 'New promo template' : 'Edit template'}</h2>
             <form onSubmit={saveT} autoComplete="off" className="tform">
@@ -803,10 +894,11 @@ export default function App() {
               </label>
               <div className="btns">
                 <button className="pri" type="submit">{tEditId === null ? 'Add template' : 'Save changes'}</button>
-                {tEditId !== null && <button type="button" onClick={resetT}>Cancel edit</button>}
+                <button type="button" onClick={resetT}>Cancel</button>
               </div>
             </form>
           </section>
+          )}
 
           {templates.length === 0 && <div className="empty">No templates yet. Make one for each Discord server, then copy and paste.</div>}
           {templates.map((t) => {
@@ -841,13 +933,12 @@ export default function App() {
       )}
       {tab === 'market' && (
         <>
+          {open !== 'market' && <button className="pri add" onClick={() => setOpen('market')}>+ Add price note</button>}
+          {open === 'market' && (
           <section className="panel">
             <h2>{mEdit ? 'Edit price note' : 'Add price note'}</h2>
             <form onSubmit={saveM} autoComplete="off" className="tform">
-              <label>Item name
-                <input required list="allnames" value={mForm.name} onChange={(e) => setMForm({ ...mForm, name: e.target.value })} placeholder="e.g. Climbing Vine" />
-              </label>
-              <datalist id="allnames">{names.map((n) => <option key={n} value={n} />)}</datalist>
+              {suggestBox('market', mForm.name, (v) => setMForm({ ...mForm, name: v }), (n) => setMForm({ ...mForm, name: n }))}
               <label>Category
                 <select value={mForm.cat} onChange={(e) => setMForm({ ...mForm, cat: e.target.value })}>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
               </label>
@@ -855,7 +946,7 @@ export default function App() {
                 <input type="number" min="0" step="any" required value={mForm.price} onChange={(e) => setMForm({ ...mForm, price: e.target.value })} placeholder="e.g. 11" />
                 <select value={mForm.mode} onChange={(e) => setMForm({ ...mForm, mode: e.target.value })} aria-label="Price type">
                   <option value="each">WL each</option>
-                  <option value="bulk">items per 1 WL (e.g. 11/1)</option>
+                  <option value="bulk">per 1 WL (e.g. 11/1)</option>
                 </select>
               </label>
               <label>Date
@@ -866,10 +957,11 @@ export default function App() {
               </label>
               <div className="btns">
                 <button className="pri" type="submit">{mEdit ? 'Save changes' : 'Add price note'}</button>
-                {mEdit && <button type="button" onClick={() => { setMEdit(null); setMForm({ ...mForm, price: '', note: '' }) }}>Cancel edit</button>}
+                <button type="button" onClick={() => { setMEdit(null); setMForm({ ...mForm, price: '', note: '' }); setOpen('') }}>Cancel</button>
               </div>
             </form>
           </section>
+          )}
 
           <div className="tools">
             <input type="search" value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search market items" aria-label="Search market items" />
@@ -906,7 +998,7 @@ export default function App() {
                     ))}
                   </details>
                   <div className="btns">
-                    <button className="sm" onClick={() => { setMEdit(null); setMForm({ name: m.name, cat: m.cat, price: '', mode: cur.mode, date: today(), note: '' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>New price</button>
+                    <button className="sm" onClick={() => { setMEdit(null); setOpen('market'); setMForm({ name: m.name, cat: m.cat, price: '', mode: cur.mode, date: today(), note: '' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>New price</button>
                     <button className="sm del" onClick={() => mDelete(`m${m.id}`, () => setMarket(market.filter((y) => y.id !== m.id)))}>{mSure === `m${m.id}` ? 'Confirm delete' : 'Delete item'}</button>
                   </div>
                 </section>
@@ -925,7 +1017,7 @@ export default function App() {
           </section>
           {names.filter((n) => !hasImg(n)).length > 0 && (
             <section className="panel">
-              <h2>Items without image<small>tap a box to add one</small></h2>
+              <h2>Items without image<small>upload a file with the same name</small></h2>
               <div className="igrid">
                 {names.filter((n) => !hasImg(n)).map((n) => <div className="icell" key={n}>{thumb(n)}<span>{n}</span></div>)}
               </div>

@@ -11,7 +11,10 @@ A small PWA for tracking your Growtopia vend shop: item name, modal (cost), sell
 - Discord promo templates: make several templates (e.g. one per Discord server/category) with header, footer, word before each item ("Sell"), separator (" | ") and price mode; copy the ready message. Messages over 2000 characters are split automatically
 - Market tab: keep dated price notes per item (e.g. Climbing Vine 11/1 WL as of 11 Aug 2026) with full history and change vs the previous note. The newest note also updates the market price of the matching inventory item, and a market price typed in the item form is logged too
 - Images tab: upload many pictures at once, matched to items by file name ("Climbing Vine.png" = item "Climbing Vine"); images show in Items and Market and can also be added by tapping the picture box. Stored in IndexedDB, shrunk to max 160 px
-- Built-in item pictures: put images in `public/items/` named after the item (e.g. `Climbing Vine.webp`) and add the file name to `public/items/index.json`; they show up automatically (59 included). Uploaded images override built-in ones
+- Built-in item pictures: put images in `public/items/` named after the item (e.g. `Climbing Vine.webp`) and add the file name to `public/items/index.json`; they show up automatically (59 included). Uploaded images override built-in ones. Pictures are display only (not clickable); upload them from the Images tab
+- Name suggestions: typing an item name (stock or market form) shows matching names with their pictures; picking one also fills the category and latest market price when known
+- PDFs show the item picture next to the item name
+- Mobile first: bottom tab bar with big touch targets, item cards with a large Sold button, forms that open with a "+ Add" button, 16px inputs (no zoom on iPhone), safe-area aware; on desktop the tabs move to the top
 - Optional market price per item (WL each or bulk), saved with the date you set it, and compared to your sell price (% above / below market). The market price at the time of each sale is stored in the sales report
 - Profit for all stock, margin, and totals (stock, money tied up, profit if all sold)
 - "Sold" button with a quantity box that reduces stock
