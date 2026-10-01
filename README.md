@@ -9,6 +9,9 @@ A small PWA for tracking your Growtopia vend shop: item name, modal (cost), sell
 - All values are rounded to whole WL; amounts of 100 WL or more also show as DL
 - Categories (Block, Background, Consumable, Surgery, Clothing, Seed, Item, Other): pick one per item, filter and sort by category; PDFs and CSVs are split into a section per category with subtotals
 - Discord promo templates: make several templates (e.g. one per Discord server/category) with header, footer, word before each item ("Sell"), separator (" | ") and price mode; copy the ready message. Messages over 2000 characters are split automatically
+- Market tab: keep dated price notes per item (e.g. Climbing Vine 11/1 WL as of 11 Aug 2026) with full history and change vs the previous note. The newest note also updates the market price of the matching inventory item, and a market price typed in the item form is logged too
+- Images tab: upload many pictures at once, matched to items by file name ("Climbing Vine.png" = item "Climbing Vine"); images show in Items and Market and can also be added by tapping the picture box. Stored in IndexedDB, shrunk to max 160 px
+- Built-in item pictures: put images in `public/items/` named after the item (e.g. `Climbing Vine.webp`) and add the file name to `public/items/index.json`; they show up automatically (59 included). Uploaded images override built-in ones
 - Optional market price per item (WL each or bulk), saved with the date you set it, and compared to your sell price (% above / below market). The market price at the time of each sale is stored in the sales report
 - Profit for all stock, margin, and totals (stock, money tied up, profit if all sold)
 - "Sold" button with a quantity box that reduces stock
@@ -61,6 +64,7 @@ The build output is a static site in `dist/`. Any static host with HTTPS works.
 index.html
 vite.config.ts        Vite + PWA manifest and caching
 public/               App icons (192, 512, apple-touch-icon)
+public/items/         Built-in item pictures + index.json (list of file names)
 src/main.tsx          Entry point
 src/App.tsx           All logic and UI
 src/index.css         Styles (light and dark theme)

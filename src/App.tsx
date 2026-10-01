@@ -54,6 +54,48 @@ const buildPromo = (t: TForm, all: Item[]) => {
   return { count: list.length, msgs: bodies.map((b) => head + b + foot) }
 }
 
+type MEntry = { id: number; raw: number; mode: Mode; date: string; note: string }
+type MItem = { id: number; name: string; cat: string; entries: MEntry[] }
+type ImgRec = { key: string; name: string; blob: Blob }
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+const dts = (d: string) => new Date(d + 'T12:00:00').getTime()
+const dlabel = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+const latestOf = (m: MItem) => m.entries.reduce<MEntry | undefined>((a, e) => (!a || e.date >= a.date ? e : a), undefined)
+
+// item names and image file names are matched ignoring case, extension and punctuation
+const nkey = (s: string) => s.toLowerCase().replace(/\.(png|jpe?g|webp|gif|bmp|avif)$/i, '').replace(/[^a-z0-9]+/g, ' ').trim()
+
+// images live in IndexedDB (too big for localStorage)
+const idb = () => new Promise<IDBDatabase>((res, rej) => {
+  const r = indexedDB.open('vend-shop', 1)
+  r.onupgradeneeded = () => r.result.createObjectStore('img', { keyPath: 'key' })
+  r.onsuccess = () => res(r.result)
+  r.onerror = () => rej(r.error)
+})
+const idbAll = async () => {
+  const db = await idb()
+  return new Promise<ImgRec[]>((res, rej) => { const q = db.transaction('img').objectStore('img').getAll(); q.onsuccess = () => res(q.result as ImgRec[]); q.onerror = () => rej(q.error) })
+}
+const idbPut = async (rec: ImgRec) => {
+  const db = await idb()
+  return new Promise<void>((res, rej) => { const t = db.transaction('img', 'readwrite'); t.objectStore('img').put(rec); t.oncomplete = () => res(); t.onerror = () => rej(t.error) })
+}
+const idbDel = async (key: string) => {
+  const db = await idb()
+  return new Promise<void>((res, rej) => { const t = db.transaction('img', 'readwrite'); t.objectStore('img').delete(key); t.oncomplete = () => res(); t.onerror = () => rej(t.error) })
+}
+// shrink big pictures so storage stays small
+const shrink = async (file: File, max = 160): Promise<Blob> => {
+  const bmp = await createImageBitmap(file)
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height))
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k))
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height)
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('image'))), 'image/webp', 0.85))
+}
+
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const stamp = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
 const dstr = (t: number) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}` }
@@ -124,7 +166,7 @@ export default function App() {
   const [sales, setSales] = useState<Sale[]>(() => {
     try { return JSON.parse(localStorage.getItem(SKEY) || '[]') } catch { return [] }
   })
-  const [tab, setTab] = useState<'items' | 'report' | 'promo'>('items')
+  const [tab, setTab] = useState<'items' | 'report' | 'promo' | 'market' | 'images'>('items')
   const [range, setRange] = useState('7')
   const [catFilter, setCatFilter] = useState('all')
   const [templates, setTemplates] = useState<Template[]>(() => {
@@ -134,6 +176,16 @@ export default function App() {
   const [tEditId, setTEditId] = useState<number | null>(null)
   const [tSure, setTSure] = useState<number | null>(null)
   const [copied, setCopied] = useState('')
+  const [market, setMarket] = useState<MItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem('vend-market-v1') || '[]') } catch { return [] }
+  })
+  const [mForm, setMForm] = useState({ name: '', cat: 'Block', price: '', mode: 'each', date: today(), note: '' })
+  const [mEdit, setMEdit] = useState<{ item: number; entry: number } | null>(null)
+  const [mSure, setMSure] = useState('')
+  const [mq, setMq] = useState('')
+  const [imgs, setImgs] = useState<Record<string, { name: string; url: string }>>({})
+  const [imgMsg, setImgMsg] = useState('')
+  const [builtin, setBuiltin] = useState<Record<string, { name: string; url: string }>>({})
   const [form, setForm] = useState<Form>(empty)
   const [editId, setEditId] = useState<number | null>(null)
   const [q, setQ] = useState('')
@@ -153,6 +205,31 @@ export default function App() {
     try { localStorage.setItem('vend-templates-v1', JSON.stringify(templates)) } catch { /* storage blocked */ }
   }, [templates])
 
+  useEffect(() => {
+    try { localStorage.setItem('vend-market-v1', JSON.stringify(market)) } catch { /* storage blocked */ }
+  }, [market])
+
+  // pictures shipped with the app in public/items (listed in public/items/index.json)
+  useEffect(() => {
+    const base = import.meta.env.BASE_URL
+    fetch(`${base}items/index.json`)
+      .then((r) => r.json())
+      .then((list: string[]) => {
+        const m: Record<string, { name: string; url: string }> = {}
+        list.forEach((f) => { const name = f.replace(/\.[^.]+$/, ''); m[nkey(name)] = { name, url: `${base}items/${encodeURIComponent(f)}` } })
+        setBuiltin(m)
+      })
+      .catch(() => { /* no built-in pictures */ })
+  }, [])
+
+  useEffect(() => {
+    idbAll().then((recs) => {
+      const m: Record<string, { name: string; url: string }> = {}
+      recs.forEach((r) => { m[r.key] = { name: r.name, url: URL.createObjectURL(r.blob) } })
+      setImgs(m)
+    }).catch(() => setImgMsg('Images cannot be saved in this browser mode.'))
+  }, [])
+
   const set = (k: Exclude<keyof Form, 'showPrice'>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
@@ -168,6 +245,7 @@ export default function App() {
     const prev = items.find((i) => i.id === editId)
     const mt = mp === undefined ? undefined : !prev || prev.mp !== mp || prev.mm !== mm ? Date.now() : prev.mt
     const d = { name: form.name.trim(), note: form.note.trim(), qty, cr, pr, cm: form.cm as Mode, pm: form.pm as Mode, mp, mm, mt, cat: form.cat, showPrice: form.showPrice }
+    if (mp !== undefined && (!prev || prev.mp !== mp || prev.mm !== mm)) logMarket(d.name, d.cat, mp, mm)
     setItems(editId === null ? [...items, { id: Date.now(), ...d }] : items.map((i) => (i.id === editId ? { ...i, ...d } : i)))
     reset()
   }
@@ -363,6 +441,101 @@ export default function App() {
     )
   }
 
+  const hasImg = (n: string) => !!(imgs[nkey(n)] ?? builtin[nkey(n)])
+  const names = Array.from(new Set([...items.map((i) => i.name), ...market.map((m) => m.name)]))
+
+  // newest market note updates the market price shown on matching inventory items
+  const pushLatest = (m: MItem) => {
+    const l = latestOf(m)
+    if (!l) return
+    const k = nkey(m.name)
+    setItems((cur) => cur.map((i) => (nkey(i.name) === k ? { ...i, mp: l.raw, mm: l.mode, mt: dts(l.date) } : i)))
+  }
+
+  // market price typed in the item form is also written to the price log (today)
+  const logMarket = (name: string, cat: string, raw: number, mode: Mode) =>
+    setMarket((cur) => {
+      const k = nkey(name), ex = cur.find((m) => nkey(m.name) === k)
+      const l = ex && latestOf(ex)
+      if (l && l.raw === raw && l.mode === mode) return cur
+      const e = { id: Date.now(), raw, mode, date: today(), note: '' }
+      return ex ? cur.map((m) => (m === ex ? { ...m, entries: [...m.entries, e] } : m)) : [...cur, { id: Date.now() + 1, name, cat, entries: [e] }]
+    })
+
+  const saveM = (e: React.FormEvent) => {
+    e.preventDefault()
+    const raw = parseFloat(mForm.price), name = mForm.name.trim()
+    if (!name || isNaN(raw)) return
+    const entry = { raw, mode: mForm.mode as Mode, date: mForm.date || today(), note: mForm.note.trim() }
+    let touched: MItem
+    let next: MItem[]
+    if (mEdit) {
+      const cur = market.find((m) => m.id === mEdit.item)
+      if (!cur) return
+      touched = { ...cur, name, cat: mForm.cat, entries: cur.entries.map((x) => (x.id === mEdit.entry ? { ...x, ...entry } : x)) }
+      next = market.map((m) => (m.id === cur.id ? touched : m))
+    } else {
+      const ex = market.find((m) => nkey(m.name) === nkey(name))
+      if (ex) { touched = { ...ex, cat: mForm.cat, entries: [...ex.entries, { id: Date.now(), ...entry }] }; next = market.map((m) => (m === ex ? touched : m)) }
+      else { touched = { id: Date.now(), name, cat: mForm.cat, entries: [{ id: Date.now() + 1, ...entry }] }; next = [...market, touched] }
+    }
+    setMarket(next)
+    pushLatest(touched)
+    setMForm({ ...mForm, price: '', note: '' })
+    setMEdit(null)
+  }
+
+  const editEntry = (m: MItem, x: MEntry) => {
+    setMForm({ name: m.name, cat: m.cat, price: String(x.raw), mode: x.mode, date: x.date, note: x.note })
+    setMEdit({ item: m.id, entry: x.id })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const mDelete = (key: string, run: () => void) => {
+    if (mSure === key) { run(); setMSure('') }
+    else { setMSure(key); setTimeout(() => setMSure((v) => (v === key ? '' : v)), 3000) }
+  }
+
+  const delEntry = (m: MItem, x: MEntry) => {
+    const left = { ...m, entries: m.entries.filter((y) => y.id !== x.id) }
+    setMarket(left.entries.length ? market.map((y) => (y.id === m.id ? left : y)) : market.filter((y) => y.id !== m.id))
+    pushLatest(left)
+    if (mEdit?.entry === x.id) setMEdit(null)
+  }
+
+  const saveImage = async (name: string, file: File) => {
+    try {
+      const blob = await shrink(file), key = nkey(name)
+      await idbPut({ key, name, blob })
+      setImgs((cur) => { if (cur[key]) URL.revokeObjectURL(cur[key].url); return { ...cur, [key]: { name, url: URL.createObjectURL(blob) } } })
+      return true
+    } catch { return false }
+  }
+
+  const uploadMany = async (files: FileList) => {
+    let ok = 0, bad = 0
+    for (const f of Array.from(files)) {
+      if (await saveImage(f.name.replace(/\.[^.]+$/, ''), f)) ok++; else bad++
+    }
+    setImgMsg(`${ok} image${ok === 1 ? '' : 's'} saved${bad ? `, ${bad} failed` : ''}.`)
+  }
+
+  const delImage = async (key: string) => {
+    try { await idbDel(key) } catch { /* ignore */ }
+    setImgs((cur) => { const c = { ...cur }; if (c[key]) URL.revokeObjectURL(c[key].url); delete c[key]; return c })
+  }
+
+  // small picture box; click it to add or replace the image for that item name
+  const thumb = (name: string) => {
+    const im = imgs[nkey(name)] ?? builtin[nkey(name)]
+    return (
+      <label className="thumb" title={im ? `Replace image: ${name}` : `Add image for ${name}`}>
+        {im ? <img src={im.url} alt={name} /> : <span aria-hidden="true">+</span>}
+        <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) saveImage(name, f); e.target.value = '' }} />
+      </label>
+    )
+  }
+
   const setT = (k: 'name' | 'cat' | 'header' | 'footer' | 'verb' | 'sep' | 'prices') => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setTForm((f) => ({ ...f, [k]: e.target.value }))
 
@@ -427,6 +600,8 @@ export default function App() {
         <button aria-pressed={tab === 'items'} onClick={() => setTab('items')}>Items</button>
         <button aria-pressed={tab === 'report'} onClick={() => setTab('report')}>Sales report</button>
         <button aria-pressed={tab === 'promo'} onClick={() => setTab('promo')}>Discord promo</button>
+        <button aria-pressed={tab === 'market'} onClick={() => setTab('market')}>Market</button>
+        <button aria-pressed={tab === 'images'} onClick={() => setTab('images')}>Images</button>
       </div>
 
       {tab === 'items' && (
@@ -505,7 +680,7 @@ export default function App() {
         const margin = i.cr > 0 ? Math.round((pe / per(i.cr, i.cm)) * 100) : null
         return (
           <div key={i.id} className={`item${i.qty === 0 ? ' out' : ''}`}>
-            <div className="name">{i.name}<small className="tag">{catOf(i)}</small>{i.note && <small>{i.note}</small>}</div>
+            <div className="name nm">{thumb(i.name)}<div>{i.name}<small className="tag">{catOf(i)}</small>{i.note && <small>{i.note}</small>}</div></div>
             <div className="c"><small>Modal</small><b>{shown(i.cr, i.cm)}</b></div>
             <div className="c sell">
               <small>Sell</small><b>{shown(i.pr, i.pm)}</b>
@@ -662,6 +837,114 @@ export default function App() {
               </section>
             )
           })}
+        </>
+      )}
+      {tab === 'market' && (
+        <>
+          <section className="panel">
+            <h2>{mEdit ? 'Edit price note' : 'Add price note'}</h2>
+            <form onSubmit={saveM} autoComplete="off" className="tform">
+              <label>Item name
+                <input required list="allnames" value={mForm.name} onChange={(e) => setMForm({ ...mForm, name: e.target.value })} placeholder="e.g. Climbing Vine" />
+              </label>
+              <datalist id="allnames">{names.map((n) => <option key={n} value={n} />)}</datalist>
+              <label>Category
+                <select value={mForm.cat} onChange={(e) => setMForm({ ...mForm, cat: e.target.value })}>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
+              </label>
+              <label>Market price
+                <input type="number" min="0" step="any" required value={mForm.price} onChange={(e) => setMForm({ ...mForm, price: e.target.value })} placeholder="e.g. 11" />
+                <select value={mForm.mode} onChange={(e) => setMForm({ ...mForm, mode: e.target.value })} aria-label="Price type">
+                  <option value="each">WL each</option>
+                  <option value="bulk">items per 1 WL (e.g. 11/1)</option>
+                </select>
+              </label>
+              <label>Date
+                <input type="date" required value={mForm.date} onChange={(e) => setMForm({ ...mForm, date: e.target.value })} />
+              </label>
+              <label className="wide">Note (optional)
+                <input maxLength={120} value={mForm.note} onChange={(e) => setMForm({ ...mForm, note: e.target.value })} placeholder="e.g. seen in the Block server" />
+              </label>
+              <div className="btns">
+                <button className="pri" type="submit">{mEdit ? 'Save changes' : 'Add price note'}</button>
+                {mEdit && <button type="button" onClick={() => { setMEdit(null); setMForm({ ...mForm, price: '', note: '' }) }}>Cancel edit</button>}
+              </div>
+            </form>
+          </section>
+
+          <div className="tools">
+            <input type="search" value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search market items" aria-label="Search market items" />
+          </div>
+          {market.length === 0 && <div className="empty">No price notes yet. Add the first one above; it also updates the market price of a matching item.</div>}
+          {market
+            .filter((m) => !mq.trim() || m.name.toLowerCase().includes(mq.trim().toLowerCase()))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((m) => {
+              const es = [...m.entries].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
+              const cur = es[0], prv = es[1]
+              const ch = prv ? Math.round((per(cur.raw, cur.mode) / per(prv.raw, prv.mode) - 1) * 100) : null
+              return (
+                <section className="panel" key={m.id}>
+                  <div className="mhead">
+                    {thumb(m.name)}
+                    <div className="g"><b>{m.name}</b><small className="tag">{m.cat}</small></div>
+                    <div className="mnow">
+                      <b>{shown(cur.raw, cur.mode)}</b>
+                      <small>as of {dlabel(cur.date)}</small>
+                      {ch !== null && prv && <small className={ch > 0 ? 'up' : ch < 0 ? 'down' : ''}>{ch === 0 ? 'no change' : `${ch > 0 ? '+' : ''}${ch}%`} vs {dlabel(prv.date)}</small>}
+                      {cur.note && <small>{cur.note}</small>}
+                    </div>
+                  </div>
+                  <details>
+                    <summary>History ({es.length})</summary>
+                    {es.map((x) => (
+                      <div className="row" key={x.id}>
+                        <span>{dlabel(x.date)}</span>
+                        <span className="g"><b>{shown(x.raw, x.mode)}</b>{x.note && <small>{x.note}</small>}</span>
+                        <button className="sm" onClick={() => editEntry(m, x)}>Edit</button>
+                        <button className="sm del" onClick={() => mDelete(`e${x.id}`, () => delEntry(m, x))}>{mSure === `e${x.id}` ? 'Confirm' : 'Delete'}</button>
+                      </div>
+                    ))}
+                  </details>
+                  <div className="btns">
+                    <button className="sm" onClick={() => { setMEdit(null); setMForm({ name: m.name, cat: m.cat, price: '', mode: cur.mode, date: today(), note: '' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>New price</button>
+                    <button className="sm del" onClick={() => mDelete(`m${m.id}`, () => setMarket(market.filter((y) => y.id !== m.id)))}>{mSure === `m${m.id}` ? 'Confirm delete' : 'Delete item'}</button>
+                  </div>
+                </section>
+              )
+            })}
+        </>
+      )}
+
+      {tab === 'images' && (
+        <>
+          <section className="panel">
+            <h2>Item images</h2>
+            <p className="sub">Pick many images at once. The file name must match the item name, for example "Climbing Vine.png" (not case sensitive). Every image is shared by Items and Market. Some images come built in with the app; an image you upload replaces the built-in one for that item.</p>
+            <input type="file" accept="image/*" multiple onChange={(e) => { if (e.target.files) uploadMany(e.target.files); e.target.value = '' }} aria-label="Upload images" />
+            {imgMsg && <p className="sub" role="status">{imgMsg}</p>}
+          </section>
+          {names.filter((n) => !hasImg(n)).length > 0 && (
+            <section className="panel">
+              <h2>Items without image<small>tap a box to add one</small></h2>
+              <div className="igrid">
+                {names.filter((n) => !hasImg(n)).map((n) => <div className="icell" key={n}>{thumb(n)}<span>{n}</span></div>)}
+              </div>
+            </section>
+          )}
+          <section className="panel">
+            <h2>Library<small>{Object.keys({ ...builtin, ...imgs }).length} images</small></h2>
+            {Object.keys({ ...builtin, ...imgs }).length === 0 && <p className="sub">No images yet.</p>}
+            <div className="igrid">
+              {Object.entries({ ...builtin, ...imgs }).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([k, v]) => (
+                <div className="icell" key={k}>
+                  {thumb(v.name)}<span>{v.name}</span>
+                  {imgs[k]
+                    ? <button className="sm del" onClick={() => mDelete(`i${k}`, () => delImage(k))}>{mSure === `i${k}` ? 'Confirm' : builtin[k] ? 'Reset to built-in' : 'Delete'}</button>
+                    : <small>built-in</small>}
+                </div>
+              ))}
+            </div>
+          </section>
         </>
       )}
     </main>
