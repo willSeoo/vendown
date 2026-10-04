@@ -1,0 +1,27 @@
+/* Sales report rows, market cards, promo templates and the image library. Mobile first: base rules are for phones, media queries add the desktop layout. */
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 0;border-top:1px solid var(--line)}
+.row .g{flex:1 1 140px;font-weight:700;overflow-wrap:anywhere}
+.row .g small{display:block;font-weight:400;color:var(--mute);font-size:12px}
+.nm{display:flex;gap:10px;align-items:center}
+.nm>div{min-width:0}
+.mhead{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.mhead .g{flex:1 1 130px;min-width:0}
+.mhead .g b{display:block;overflow-wrap:anywhere}
+.mnow{text-align:right;margin-left:auto}
+.mnow b{display:block;font:700 20px "Pixelify Sans",ui-monospace,monospace;color:var(--wl)}
+.mnow small{display:block;color:var(--mute);font-size:12px}
+.mnow small.up{color:var(--up)}
+.mnow small.down{color:var(--down)}
+details{margin:10px 0}
+summary{cursor:pointer;color:var(--accent);font-weight:700;padding:6px 0}
+.igrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.icell{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:13px;overflow-wrap:anywhere}
+.tform{grid-template-columns:1fr}
+.msg{margin-bottom:12px}
+.msg textarea{font-size:14px;line-height:1.5;resize:vertical;min-height:120px}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;color:var(--mute);font-size:13px}
+.mrow button{min-width:110px}
+@media (min-width:720px){
+  .tform{grid-template-columns:1fr 1fr}
+  .igrid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+}

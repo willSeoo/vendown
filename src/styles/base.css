@@ -1,0 +1,18 @@
+/* Design tokens (light and dark), reset and typography. Mobile first: base rules are for phones, media queries add the desktop layout. */
+:root{--bg:#e6f0f7;--panel:#fff;--ink:#1c2836;--mute:#5d6b7a;--line:#c9d7e3;--wood:#8a5a34;--wl:#c98f0a;--dl:#2b64c4;--up:#1b7d45;--down:#b83227;--accent:#2b64c4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#111a24;--panel:#1a2532;--ink:#e6edf4;--mute:#95a5b5;--line:#2c3b4c;--wood:#c48a5a;--wl:#f0b429;--dl:#6fa0ee;--up:#4cc27f;--down:#f0776b;--accent:#6fa0ee}
+}
+:root[data-theme="dark"]{--bg:#111a24;--panel:#1a2532;--ink:#e6edf4;--mute:#95a5b5;--line:#2c3b4c;--wood:#c48a5a;--wl:#f0b429;--dl:#6fa0ee;--up:#4cc27f;--down:#f0776b;--accent:#6fa0ee}
+*,*:before,*:after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "DM Sans",system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+h1{font:700 24px/1.1 "Pixelify Sans",ui-monospace,monospace;margin:4px 0 6px}
+.sub{color:var(--mute);margin:0 0 14px;max-width:60ch;font-size:14px}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;scroll-behavior:auto!important}
+}
+@media (min-width:720px){
+  h1{font-size:30px}
+  .sub{font-size:16px}
+}

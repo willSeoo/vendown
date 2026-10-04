@@ -1,0 +1,56 @@
+/* Shared building blocks: summary cards, panels, forms, buttons, tags, pictures, name suggestions. Mobile first: base rules are for phones, media queries add the desktop layout. */
+.sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.sum>div{background:var(--panel);border:2px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.sum>div:last-child:nth-child(odd){grid-column:1/-1}
+.sum b{display:block;font:700 19px/1.25 "Pixelify Sans",ui-monospace,monospace;overflow-wrap:anywhere}
+.sum span{color:var(--mute);font-size:13px}
+.panel{background:var(--panel);border:2px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.panel h2{font:700 18px "Pixelify Sans",ui-monospace,monospace;margin:0 0 10px}
+.panel h2 small{color:var(--mute);font:400 13px "DM Sans",sans-serif;margin-left:10px}
+form{display:grid;grid-template-columns:1fr;gap:12px}
+label{display:flex;flex-direction:column;font-size:14px;color:var(--mute);gap:4px}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:8px;padding:10px 12px;min-height:46px;min-width:0;width:100%}
+input[type=checkbox]{width:22px;height:22px;min-height:0;accent-color:var(--accent)}
+input[type=file]{padding:8px}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.note,.preview,.btns,.chk,.tform label.wide{grid-column:1/-1}
+.preview{font-size:14px;color:var(--mute);background:var(--bg);border-radius:8px;padding:8px 10px}
+.chk{flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-size:15px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btns button{flex:1 1 auto}
+button{font:700 15px "DM Sans",sans-serif;border:2px solid var(--ink);background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer;min-height:46px;touch-action:manipulation}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+button.sm{padding:6px 12px;min-height:42px;font-size:14px}
+button.del{color:var(--down);border-color:var(--down)}
+button.add{width:100%;margin-bottom:12px}
+button:disabled{opacity:.45;cursor:default}
+button:active{transform:translateY(1px)}
+.tools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.tools input{flex:1 1 100%}
+.tools select,.tools button{flex:1 1 calc(50% - 4px);white-space:nowrap}
+small.tag{display:inline-block;width:fit-content;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;margin:2px 4px 2px 0;color:var(--mute)}
+.up{color:var(--up)}
+.down{color:var(--down)}
+.empty{text-align:center;color:var(--mute);padding:24px 12px;border:2px dashed var(--line);border-radius:10px;margin-bottom:12px}
+.thumb{width:44px;height:44px;flex:none;border:2px solid var(--line);border-radius:8px;background:var(--bg);display:grid;place-items:center;overflow:hidden;color:var(--mute);font-size:18px;padding:0;user-select:none}
+.thumb img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;pointer-events:none;-webkit-user-drag:none}
+.sugwrap{position:relative}
+.sug{position:absolute;top:100%;left:0;right:0;z-index:30;list-style:none;margin:4px 0 0;padding:4px;background:var(--panel);border:2px solid var(--ink);border-radius:10px;max-height:40vh;overflow:auto;box-shadow:0 8px 20px rgba(0,0,0,.25)}
+.sug li{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;overflow-wrap:anywhere;min-height:48px}
+.sug li:hover{background:var(--bg)}
+.sug .thumb{width:36px;height:36px}
+@media (min-width:720px){
+  .sum{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  .sum>div:last-child:nth-child(odd){grid-column:auto}
+  .sum b{font-size:22px}
+  .panel{padding:14px}
+  form:not(.tform){grid-template-columns:repeat(3,1fr)}
+  input,select,textarea{min-height:40px;padding:8px 10px}
+  button{min-height:40px}
+  button.add{width:auto}
+  .btns button{flex:0 0 auto}
+  .tools{flex-wrap:nowrap}
+  .tools input{flex:1 1 auto}
+  .tools select,.tools button{flex:0 0 auto}
+  .sug{max-height:300px}
+}

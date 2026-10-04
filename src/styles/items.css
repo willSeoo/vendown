@@ -1,0 +1,33 @@
+/* Stock list: collapsible item cards and the list/grid around them. Mobile first: base rules are for phones, media queries add the desktop layout. */
+.itemlist,.cards{display:grid;grid-template-columns:1fr;gap:10px;align-items:start;margin-bottom:12px}
+.cards>.panel{margin-bottom:0}
+.listbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;color:var(--mute);font-size:14px}
+.item{background:var(--panel);border:2px solid var(--line);border-left:6px solid var(--wood);border-radius:10px;overflow:hidden}
+.item.out{border-left-color:var(--line)}
+.item.out .ihead{opacity:.7}
+.ihead{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:0;background:transparent;text-align:left;padding:8px 12px;min-height:60px;color:var(--ink);font:inherit}
+.ihead:hover{background:var(--bg)}
+.itxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.itxt b{overflow-wrap:anywhere;font-weight:700;font-size:16px;line-height:1.25}
+.chev{flex:none;font-size:18px;color:var(--mute);transition:transform .15s}
+.item.open .chev{transform:rotate(180deg)}
+.ibody{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px 12px;border-top:1px dashed var(--line)}
+.ibody .inote,.ibody .act{grid-column:1/-1}
+.inote{color:var(--mute);font-size:14px;overflow-wrap:anywhere}
+.c{background:var(--bg);border-radius:8px;padding:8px 10px;min-width:0}
+.c small{display:block;color:var(--mute);font-size:12px}
+.c b{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sell b{color:var(--wl)}
+.act{display:flex;gap:8px;align-items:center}
+.sq{width:72px;flex:none;padding:6px 8px}
+.act .sq + button{flex:1;background:var(--accent);border-color:var(--accent);color:#fff}
+@media (min-width:720px){
+  .act{justify-content:flex-end}
+  .act .sq + button{flex:none;min-width:96px}
+}
+@media (min-width:900px){
+  .itemlist,.cards{grid-template-columns:1fr 1fr}
+}
+@media (min-width:1300px){
+  .itemlist{grid-template-columns:1fr 1fr 1fr}
+}

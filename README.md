@@ -67,20 +67,37 @@ The build output is a static site in `dist/`. Any static host with HTTPS works.
 
 ```
 index.html
-vite.config.ts        Vite + PWA manifest and caching
-public/               App icons (192, 512, apple-touch-icon)
-public/items/         Built-in item pictures + index.json (list of file names)
-src/main.tsx          Entry point
-src/App.tsx           All logic and UI
-src/index.css         Styles (light and dark theme)
+vite.config.ts            Vite + PWA manifest and caching
+public/                   App icons, public/items/ = built-in item pictures + index.json
+src/
+  main.tsx                Entry point
+  App.tsx                 Shell: top bar, tab bar, tabs
+  types.ts                Shared types
+  constants.ts            Categories, storage keys, empty forms
+  store/ShopContext.tsx   Shop data (items, sales, market, templates, pictures) and actions
+  hooks/                  useLocalStorage, useConfirm (two-step delete), useImages
+  lib/                    Pure logic, no React: money, names, dates, summary (totals and report),
+                          market (price notes), promo (Discord text), csv, pdf, imageStore
+  components/             Shared UI: TabBar, TabPane, Thumb, NameSuggest, ModeSelect
+  features/
+    items/                ItemsTab, ItemForm, ItemCard
+    report/               ReportTab
+    market/               MarketTab
+    promo/                PromoTab
+    images/               ImagesTab
+  styles/                 index.css imports base, layout, components, items, features
 ```
+
+How it fits together: tabs read and change data only through `useShop()`; formulas live in `lib/`
+and are plain functions, so they are easy to test; each tab owns its own screen state (search,
+open form, expanded cards).
 
 ## Customize
 
 - **Icons:** replace the PNGs in `public/` with your own, keeping the same names and sizes.
-- **Colors:** edit the CSS variables at the top of `src/index.css`.
+- **Colors:** edit the CSS variables at the top of `src/styles/base.css`.
 - **App name and theme color:** edit the `manifest` block in `vite.config.ts`.
-- **Storage key:** items are stored under `vend-items-v1` in `localStorage` (see `KEY` in `src/App.tsx`). Sales are stored under `vend-sales-v1`.
+- **Storage key:** items are stored under `vend-items-v1` in `localStorage` (see `STORAGE_KEYS` in `src/constants.ts`). Sales are stored under `vend-sales-v1`.
 
 ## Notes
 
